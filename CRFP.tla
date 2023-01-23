@@ -62,8 +62,7 @@ DeleteUpdateFired ==
 
 CreateUpdateResource
     /\ MachineState = "CreateUpateResource"
-    
-
+\
 Live ==
     /\ TRUE
     /\ StableStateIsReached

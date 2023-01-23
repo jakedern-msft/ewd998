@@ -38,7 +38,7 @@ DetectTermination ==
 Init == 
     /\ NodeWorking = [node \in Nodes |-> TRUE]
     /\ NodeCounter = [node \in Nodes |-> 0]
-    /\ NodeColor = [node \in Nodes |-> "Black"]
+    /\ NodeColor \in [Nodes -> {"White", "Black"}]
     /\ Network = [node \in Nodes |-> 0]
     /\ TerminationDetected = FALSE
     /\ TokenPosition = 1
@@ -49,7 +49,6 @@ Init ==
 InitiateProbe == 
     /\ TokenPosition = 1
     /\ ~Terminated
-    /\ TerminationDetected = FALSE
     /\ TokenValue' = 0
     /\ TokenPosition' = TokenPosition + 1
     /\ TokenColor' = "White"
@@ -123,7 +122,9 @@ NodesStarWorkingAfterReceivingMessage ==
     /\ [][\A node \in Nodes : Network'[node] = Network[node] - 1 => NodeWorking'[node] = TRUE]_vars
 
 TerminationDetectionIsCorrect ==
-    TerminationDetected => Terminated
+    /\ TerminationDetected => Terminated
+    /\ TerminationDetected => \A node \in Nodes : NodeWorking[node] = FALSE
+    /\ TerminationDetected => \A node \in Nodes : Network[node] = 0
 
 TerminationIsEventuallyDetected == 
     <>Terminated ~> TerminationDetected
@@ -142,7 +143,7 @@ THEOREM Spec => ATD!Spec
 Correct ==
     /\ [](ATD!TypesOk)
     /\ [](TypesOk)
-    /\ [](ATD!TerminationDetectionIsCorrect)
+    /\ [](TerminationDetectionIsCorrect)
     /\ ATD!TerminationIsEventuallyDetected
     /\ ATD!TerminationDetectionIsStable
 ====

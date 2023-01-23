@@ -12,10 +12,9 @@ VARIABLE
     TerminationDetected,
     TokenPosition,
     TokenColor,
-    TokenValue,
-    ProbeInitiated
+    TokenValue
 
-vars == << NodeWorking, NodeColor, NodeCounter, Network, TerminationDetected, TokenPosition, TokenColor, TokenValue, ProbeInitiated >>
+vars == << NodeWorking, NodeColor, NodeCounter, Network, TerminationDetected, TokenPosition, TokenColor, TokenValue >>
 Nodes == 1..NumberOfNodes
 
 ATD == INSTANCE A2
@@ -26,25 +25,23 @@ Terminated ==
     /\ TokenColor = "White"
     /\ NodeCounter[1] + TokenValue = 0
     /\ NodeColor[1] = "White"
-    /\ ProbeInitiated = TRUE
     /\ NodeWorking[1] = FALSE
 
 \* Action Allowable state change
 DetectTermination == 
     /\ TerminationDetected' = Terminated
-    /\ UNCHANGED << NodeWorking, NodeColor, NodeCounter, Network, TokenPosition, TokenColor, TokenValue, ProbeInitiated >>
+    /\ UNCHANGED << NodeWorking, NodeColor, NodeCounter, Network, TokenPosition, TokenColor, TokenValue >>
 
 \* Initial state
 Init == 
     /\ NodeWorking = [node \in Nodes |-> TRUE]
     /\ NodeCounter = [node \in Nodes |-> 0]
-    /\ NodeColor \in [Nodes -> {"White", "Black"}]
+    /\ NodeColor = [node \in Nodes |-> "Black"]
     /\ Network = [node \in Nodes |-> 0]
     /\ TerminationDetected = FALSE
     /\ TokenPosition = 1
     /\ TokenValue = 0
     /\ TokenColor = "White"
-    /\ ProbeInitiated = FALSE
 
 InitiateProbe == 
     /\ TokenPosition = 1
@@ -53,13 +50,12 @@ InitiateProbe ==
     /\ TokenPosition' = TokenPosition + 1
     /\ TokenColor' = "White"
     /\ NodeColor' = [NodeColor EXCEPT ![1] = "White"]
-    /\ ProbeInitiated' = TRUE
     /\ UNCHANGED << NodeWorking, NodeCounter, Network, TerminationDetected >>
 
 \* Possible actions in the system
 NodeFinishesWork(node) ==
     /\ NodeWorking' = node :> FALSE @@ NodeWorking
-    /\ UNCHANGED << NodeColor, NodeCounter, ProbeInitiated, TokenColor, TokenValue, Network, TerminationDetected, TokenPosition >>    
+    /\ UNCHANGED << NodeColor, NodeCounter, TokenColor, TokenValue, Network, TerminationDetected, TokenPosition >>    
 
 NodePassesToken(node) ==
     /\ node # 1
@@ -68,12 +64,12 @@ NodePassesToken(node) ==
     /\ IF TokenPosition = NumberOfNodes THEN TokenPosition' = 1 ELSE TokenPosition' = node + 1
     /\ TokenValue' = TokenValue + NodeCounter[node]
     /\ NodeColor' = [NodeColor EXCEPT ![node] = "White"]
-    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, ProbeInitiated, TokenColor >>
+    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, TokenColor >>
 
 NodeReceivesToken(node) ==
     /\ TokenPosition = node
     /\ IF NodeColor[node] = "Black" THEN TokenColor' = "Black" ELSE UNCHANGED TokenColor
-    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, ProbeInitiated, TokenValue, TokenPosition, NodeColor >>
+    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, TokenValue, TokenPosition, NodeColor >>
 
 NodeReceives(destinationNode) == 
     /\ Network[destinationNode] > 0
@@ -81,13 +77,13 @@ NodeReceives(destinationNode) ==
     /\ NodeCounter' = [NodeCounter EXCEPT ![destinationNode] = @ - 1]
     /\ NodeColor' = [NodeColor EXCEPT ![destinationNode] = "Black"]
     /\ NodeWorking' = [NodeWorking EXCEPT ![destinationNode] = TRUE]
-    /\ UNCHANGED << TerminationDetected, TokenPosition, ProbeInitiated, TokenColor, TokenValue >>
+    /\ UNCHANGED << TerminationDetected, TokenPosition, TokenColor, TokenValue >>
 
 SendMessage(sourceNode) ==
     /\ NodeWorking[sourceNode] = TRUE
     /\ NodeCounter' = [NodeCounter EXCEPT ![sourceNode] = @ + 1]
     /\ \E destinationNode \in Nodes : Network' = [Network EXCEPT ![destinationNode] = Network[destinationNode] + 1]
-    /\ UNCHANGED  << NodeWorking, TerminationDetected, TokenPosition, NodeColor, ProbeInitiated, TokenColor, TokenValue >>
+    /\ UNCHANGED  << NodeWorking, TerminationDetected, TokenPosition, NodeColor, TokenColor, TokenValue >>
 
 Next == 
     \/ DetectTermination
@@ -116,7 +112,6 @@ TypesOk ==
     /\ TokenPosition \in Nodes
     /\ Network \in [Nodes -> Nat]
     /\ TerminationDetected \in {TRUE, FALSE}
-    /\ ProbeInitiated \in {TRUE, FALSE}
 
 NodesStarWorkingAfterReceivingMessage == 
     /\ [][\A node \in Nodes : Network'[node] = Network[node] - 1 => NodeWorking'[node] = TRUE]_vars

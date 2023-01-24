@@ -46,6 +46,7 @@ Init ==
 InitiateProbe == 
     /\ TokenPosition = 1
     /\ ~Terminated
+    /\ NodeWorking[1] = FALSE
     /\ TokenValue' = 0
     /\ TokenPosition' = TokenPosition + 1
     /\ TokenColor' = "White"
@@ -54,6 +55,7 @@ InitiateProbe ==
 
 \* Possible actions in the system
 NodeFinishesWork(node) ==
+    /\ NodeWorking[node] = TRUE
     /\ NodeWorking' = node :> FALSE @@ NodeWorking
     /\ UNCHANGED << NodeColor, NodeCounter, TokenColor, TokenValue, Network, TerminationDetected, TokenPosition >>    
 
@@ -63,13 +65,9 @@ NodePassesToken(node) ==
     /\ NodeWorking[node] = FALSE
     /\ IF TokenPosition = NumberOfNodes THEN TokenPosition' = 1 ELSE TokenPosition' = node + 1
     /\ TokenValue' = TokenValue + NodeCounter[node]
-    /\ NodeColor' = [NodeColor EXCEPT ![node] = "White"]
-    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, TokenColor >>
-
-NodeReceivesToken(node) ==
-    /\ TokenPosition = node
     /\ IF NodeColor[node] = "Black" THEN TokenColor' = "Black" ELSE UNCHANGED TokenColor
-    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter, TokenValue, TokenPosition, NodeColor >>
+    /\ NodeColor' = [NodeColor EXCEPT ![node] = "White"]
+    /\ UNCHANGED << Network, TerminationDetected, NodeWorking, NodeCounter >>
 
 NodeReceives(destinationNode) == 
     /\ Network[destinationNode] > 0
@@ -85,6 +83,26 @@ SendMessage(sourceNode) ==
     /\ \E destinationNode \in Nodes : Network' = [Network EXCEPT ![destinationNode] = Network[destinationNode] + 1]
     /\ UNCHANGED  << NodeWorking, TerminationDetected, TokenPosition, NodeColor, TokenColor, TokenValue >>
 
+Alias == [
+    NodeWorking |-> NodeWorking,
+    NodeColor |-> NodeColor,
+    NodeCounter |-> NodeCounter,
+    Network |-> Network,
+    TerminationDetected |-> TerminationDetected,
+    Terminated |-> Terminated,
+    TokenPosition |-> TokenPosition,
+    TokenColor |-> TokenColor,
+    TokenValue |-> TokenValue,
+    Actions |-> [
+        DetectTermination |-> ENABLED(DetectTermination),
+        InitiateProbe |-> ENABLED(InitiateProbe),
+        NodeFinishesWork |-> [node \in Nodes |-> ENABLED(NodeFinishesWork(node))],
+        NodePassesToken |-> [node \in Nodes |-> ENABLED(NodePassesToken(node))],
+        NodeReceives |-> [node \in Nodes |-> ENABLED(NodeReceives(node))],
+        SendMessage |-> [node \in Nodes |-> ENABLED(SendMessage(node))]
+    ]
+]
+
 Next == 
     \/ DetectTermination
     \/ InitiateProbe
@@ -95,10 +113,10 @@ Next ==
             \/ NodePassesToken(node)
 
 NetworkIsFinite == 
-    \A node \in Nodes : Network[node] <= 5
+    \A node \in Nodes : Network[node] <= 3
 
 WorkIsFinite == 
-    \A node \in Nodes : NodeCounter[node] <= 5
+    \A node \in Nodes : NodeCounter[node] <= 2
 
 NetworkIsValid == 
     \A node \in Nodes : Network[node] >= 0
@@ -132,6 +150,9 @@ Spec ==
     /\ Init
     /\ [][Next]_vars
     /\ WF_vars(Next)
+    /\ \A node \in Nodes : WF_vars(NodeReceives(node))
+
+ATDSpec == ATD!Spec
 
 THEOREM Spec => ATD!Spec
 

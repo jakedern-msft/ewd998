@@ -150,7 +150,7 @@ Spec ==
     /\ Init
     /\ [][Next]_vars
     /\ WF_vars(Next)
-    /\ \A node \in Nodes : WF_vars(NodeReceives(node))
+    \* /\ \A node \in Nodes : WF_vars(NodeReceives(node))
 
 ATDSpec == ATD!Spec
 

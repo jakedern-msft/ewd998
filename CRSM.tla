@@ -12,113 +12,164 @@ CustomResourceProviderStateMachineStates == { "Inactive", "CreateUpdateResource"
 CustomResourceProviderStateMachineEvents == { "Update", "Pause" }
 CustomResourceProviderStateMachineType == [
     State: CustomResourceProviderStateMachineStates,
-    K8sResource: K8sResourceType
+    PauseNotification: BOOLEAN
 ]
 
 \* Possible states for a feature operation
 FeatureOperationStates == { "Initial", "Pending", "Completed" }
 FeatureOperationType == [
-    State: FeatureOperationStates,
-    Machine: CustomResourceProviderStateMachineType
+    State: FeatureOperationStates
 ]
 
 \* Custom resource state machine states and events
 CustomResourceStateMachineStates == { "Inactive", "PrepareForCreation", "CreateResources", "WaitForResourceCreation", "PrepareForCreation", "Ready" }
 CustomResourceStateMachineEvents == { "Update", "Create"}
 CustomResourceStateMachineType == [
-    State: CustomResourceStateMachineStates,
-    Operations: Seq(FeatureOperationType),
-    K8sResource: K8sResourceType
-]
-
-\** Initial state for the custom resource state machine
-InitialCRSM == [
-    State |-> "Inactive",
-    Operations |-> << 
-        [ State |-> "Initial", Machine |-> [ State |-> "Inactive", K8sResource |-> [ Exists |-> FALSE, Ready |-> FALSE]]],
-        [ State |-> "Initial", Machine |-> [ State |-> "Inactive", K8sResource |-> [ Exists |-> FALSE, Ready |-> FALSE]]],
-        [ State |-> "Initial", Machine |-> [ State |-> "Inactive", K8sResource |-> [ Exists |-> FALSE, Ready |-> FALSE]]]
-    >>,
-    K8sResource |-> [ Exists |-> FALSE, Ready |-> FALSE ]
+    State: CustomResourceStateMachineStates
 ]
 
 \** Variables and types
 
-VARIABLE CRSM
+VARIABLE CustomResourceFSM, CustomResourceProviderFSM_One, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration
 
-vars == << CRSM >>
+vars == << CustomResourceFSM, CustomResourceProviderFSM_One, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
 
 TypeOk == 
-    /\ CRSM \in CustomResourceStateMachineType
-    /\ CRSM.Operations \in Seq(FeatureOperationType)
-    /\ CRSM.K8sResource \in K8sResourceType
-    /\ Len(CRSM.Operations) = 3
+    /\ CustomResourceFSM \in CustomResourceStateMachineType
+    /\ CustomResourceProviderFSM_One \in CustomResourceProviderStateMachineType
+    /\ FeatureOperation_One \in FeatureOperationType
+    /\ K8sChildCustomObject \in K8sResourceType
+    /\ CustomResourceFSM.State \in CustomResourceStateMachineStates
+    /\ CustomResourceProviderFSM_One.State \in CustomResourceProviderStateMachineStates
+    /\ FeatureOperation_One.State \in FeatureOperationStates
+    /\ K8sChildCustomObject.Exists \in BOOLEAN
+    /\ K8sChildCustomObject.Ready \in BOOLEAN
+    /\ K8sParentCustomObjectGeneration \in Nat
+    /\ CustomResourceProviderFSM_One.PauseNotification \in BOOLEAN
+
+\** Child custom object actions
+
+K8sChildCustomObject_BecomesReady ==
+    /\ K8sChildCustomObject.Exists = TRUE
+    /\ K8sChildCustomObject.Ready = FALSE
+    /\ K8sChildCustomObject' = [ K8sChildCustomObject EXCEPT !.Ready = TRUE ]
+    /\ UNCHANGED << CustomResourceFSM, CustomResourceProviderFSM_One, FeatureOperation_One, K8sParentCustomObjectGeneration >>
+
+K8sChildCustomObject_Actions ==
+    \/ K8sChildCustomObject_BecomesReady
 
 \** Custom resource provider machine actions
 
-CRFP_PauseEvent(machine) ==
-    \/ /\ machine.State  = "CreateUpdateResource"
-       /\ machine' = [ machine EXCEPT !.State = "CreateUpdatePaused" ]
-    \/ /\ machine.State  = "WaitForResourceToBeReady"
-       /\ machine' = [ machine EXCEPT !.State = "CreateUpdatePaused" ]
+CustomResourceProvider_FSM_Start ==
+    /\ CustomResourceProviderFSM_One.State = "Inactive"
+    /\ FeatureOperation_One.State = "Pending"
+    /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.State = "CreateUpdateResource" ]
+    /\ UNCHANGED << CustomResourceFSM, K8sChildCustomObject, K8sParentCustomObjectGeneration, FeatureOperation_One >>
+
+CustomResourceProvider_FSM_CreateUpdateResource ==
+    /\ CustomResourceProviderFSM_One.State = "CreateUpdateResource"
+    /\ IF CustomResourceProviderFSM_One.PauseNotification = TRUE THEN
+        \* If there is a pause notification and we are in this state then the pause is prioritized
+        /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.State = "CreateUpdatePaused", !.PauseNotification = FALSE ]
+        /\ UNCHANGED << CustomResourceFSM, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
+       ELSE
+        /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.State = "WaitForResourceToBeReady" ]
+        /\ K8sChildCustomObject' = [ K8sChildCustomObject EXCEPT !.Exists = TRUE ]
+        /\ UNCHANGED << CustomResourceFSM, FeatureOperation_One, K8sParentCustomObjectGeneration, K8sParentCustomObjectGeneration >>
+
+CustomResourceProvider_FSM_TransitionToReady ==
+    /\ CustomResourceProviderFSM_One.State = "WaitForResourceToBeReady"
+    /\ IF CustomResourceProviderFSM_One.PauseNotification = TRUE THEN
+        /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.State = "CreateUpdatePaused", !.PauseNotification = FALSE ]
+        /\ UNCHANGED << CustomResourceFSM, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
+       ELSE
+        /\ K8sChildCustomObject.Ready = TRUE
+        /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.State = "Ready" ]
+        /\ UNCHANGED << CustomResourceFSM, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
+
+CustomResourceProvider_FSM_Actions ==
+    \/ CustomResourceProvider_FSM_CreateUpdateResource
+    \/ CustomResourceProvider_FSM_TransitionToReady
+    \/ CustomResourceProvider_FSM_Start
 
 \** Custom Resource State Machine Actions
 
-CRSM_CreateEvent == 
-    /\ CRSM.K8sResource.Exists = FALSE
-    /\ CRSM' = [ CRSM EXCEPT !.K8sResource.Exists = TRUE ]
+CustomResource_FSM_Start ==
+    /\ CustomResourceFSM.State = "Inactive"
+    /\ CustomResourceFSM' = [ CustomResourceFSM EXCEPT !.State = "PrepareForCreation" ]
+    /\ UNCHANGED << CustomResourceProviderFSM_One, FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
 
-CRSM_BecomesActive ==
-    /\ CRSM.State = "Inactive"
-    /\ CRSM.K8sResource.Exists = TRUE
-    /\ CRSM' = [ CRSM EXCEPT !.State = "PrepareForCreation" ]
+CustomResource_FSM_PrepareForCreationTransition ==
+    /\ CustomResourceFSM.State = "PrepareForCreation"
+    /\ CustomResourceFSM' = [ CustomResourceFSM EXCEPT !.State = "CreateResources" ]
+    /\  IF FeatureOperation_One.State = "Pending"
+        THEN /\ CustomResourceProviderFSM_One' = [ CustomResourceProviderFSM_One EXCEPT !.PauseNotification = TRUE ]
+        ELSE /\ UNCHANGED CustomResourceProviderFSM_One
+    /\ UNCHANGED << FeatureOperation_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
 
-CRSM_PrepareForCreationTransition ==
-    /\ CRSM.State = "PrepareForCreation"
-    /\ \A i \in 1..Len(CRSM.Operations): IF CRSM.Operations[i].State = "Pending" THEN CRFP_PauseEvent(CRSM.Operations[i].Machine) ELSE TRUE
-    /\ CRSM' = [ CRSM EXCEPT !.State = "CreateResources" ]
+CustomResource_FSM_CreateResourcesTransition ==
+    /\ CustomResourceFSM.State = "CreateResources"
+    /\ FeatureOperation_One' = IF FeatureOperation_One.State = "Initial" THEN [ FeatureOperation_One EXCEPT !.State = "Pending" ] ELSE FeatureOperation_One
+    /\ CustomResourceFSM' = [ CustomResourceFSM EXCEPT !.State = "WaitForResourceCreation" ]
+    \* Scheduler will not select feature operations that are in the "Completed" state
+    /\ UNCHANGED << K8sChildCustomObject, K8sParentCustomObjectGeneration, CustomResourceProviderFSM_One >>
 
-CRSM_CreateResourcesTransition == 
-    /\ CRSM.State = "CreateResources"
-    /\ CRSM' = [ CRSM EXCEPT !.State = "WaitForResourceCreation" ]
+CustomResource_FSM_WaitForResourcesUpdateEventTransition ==
+    /\ CustomResourceFSM.State = "WaitForResourceCreation"
+    /\ CustomResourceFSM' = [ CustomResourceFSM EXCEPT !.State = "PrepareForCreation" ]
+    /\ K8sParentCustomObjectGeneration' = K8sParentCustomObjectGeneration + 1
+    /\ UNCHANGED << CustomResourceProviderFSM_One, FeatureOperation_One, K8sChildCustomObject >>
 
-CRSM_WaitForResourcesCompleteTransition == 
-    /\ CRSM.State = "WaitForResourceCreation"
-    /\ CRSM' = [ CRSM EXCEPT !.State = "Ready" ]
+CustomResource_FSM_ResourcesCreationCompleteTransition ==
+    \* Custom reosurce fsm must be in WaitForResourceCreation state for this auto action
+    /\ CustomResourceFSM.State = "WaitForResourceCreation"
+    /\ CustomResourceProviderFSM_One.State = "Ready"
+    /\ CustomResourceFSM' = [ CustomResourceFSM EXCEPT !.State = "Ready" ]
+    /\ FeatureOperation_One' = [ FeatureOperation_One EXCEPT !.State = "Completed" ]
+    /\ UNCHANGED << CustomResourceProviderFSM_One, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
 
-CRSM_Actions ==
-    \/ CRSM_CreateEvent
-    \/ CRSM_BecomesActive
-    \/ CRSM_PrepareForCreationTransition
-    \/ CRSM_CreateResourcesTransition
-    \/ CRSM_WaitForResourcesCompleteTransition
-
+CustomResource_FSM_Actions ==
+    \/ CustomResource_FSM_Start
+    \/ CustomResource_FSM_PrepareForCreationTransition
+    \/ CustomResource_FSM_CreateResourcesTransition
+    \/ CustomResource_FSM_WaitForResourcesUpdateEventTransition
+    \/ CustomResource_FSM_ResourcesCreationCompleteTransition
 
 \** Spec
 
 Init == 
-    /\ CRSM = InitialCRSM
+    /\ CustomResourceFSM = [ State |-> "Inactive" ]
+    /\ CustomResourceProviderFSM_One = [ State |-> "Inactive", PauseNotification |-> FALSE ]
+    /\ FeatureOperation_One = [ State |-> "Initial" ]
+    /\ K8sChildCustomObject = [ Exists |-> FALSE, Ready |-> FALSE ]
+    /\ K8sParentCustomObjectGeneration = 0
 
 Next == 
-    \/ CRSM_Actions
+    \/ K8sChildCustomObject_Actions
+    \/ CustomResourceProvider_FSM_Actions
+    \/ CustomResource_FSM_Actions
+
+UpdatesAreFinite == 
+    K8sParentCustomObjectGeneration < 3
 
 Spec == 
     /\ Init
     /\ [][Next]_vars
 
-
 \** Invariants
 
 Safe ==
     /\ TypeOk
+    \* /\ [][CustomResourceProviderFSM_One.State # "Ready"]_vars
+    \* /\ [][K8sChildCustomObject.Ready # TRUE]_vars
+    /\ [][CustomResourceFSM.State # "Ready"]_vars
+    /\ [][CustomResourceFSM.State = "Ready" => CustomResourceProviderFSM_One.State = "Ready"]_vars
 
 Live ==
-    /\ TRUE
+    /\ <>(K8sChildCustomObject.Ready = TRUE) ~> (CustomResourceFSM.State = "Ready" /\ CustomResourceProviderFSM_One.State = "Ready")
 
 Correct ==
     /\ Safe
     /\ Live
 
-
-    
 ====

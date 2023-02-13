@@ -27,9 +27,15 @@ CustomResourceStateMachineType == [
     State: CustomResourceStateMachineStates
 ]
 
-\** Variables and types
-
+\* State
 VARIABLE CustomResourceFSM, CustomResourceproviderFSM, FeatureOperation, K8sChildCustomObject, K8sParentCustomObjectGeneration
+
+Init == 
+    /\ CustomResourceFSM = [ State |-> "Inactive" ]
+    /\ CustomResourceproviderFSM = [ State |-> "Inactive" ]
+    /\ FeatureOperation = [ State |-> "Initial" ]
+    /\ K8sChildCustomObject = [ Exists |-> FALSE, Ready |-> FALSE ]
+    /\ K8sParentCustomObjectGeneration = 0
 
 vars == << CustomResourceFSM, CustomResourceproviderFSM, FeatureOperation, K8sChildCustomObject, K8sParentCustomObjectGeneration >>
 
@@ -137,13 +143,6 @@ CustomResource_FSM_Actions ==
     \/ CustomResource_FSM_ResourcesCreationCompleteTransition
 
 \** Spec
-
-Init == 
-    /\ CustomResourceFSM = [ State |-> "Inactive" ]
-    /\ CustomResourceproviderFSM = [ State |-> "Inactive" ]
-    /\ FeatureOperation = [ State |-> "Initial" ]
-    /\ K8sChildCustomObject = [ Exists |-> FALSE, Ready |-> FALSE ]
-    /\ K8sParentCustomObjectGeneration = 0
 
 Next == 
     \/ K8sChildCustomObject_Actions

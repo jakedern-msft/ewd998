@@ -21,7 +21,7 @@ FeatureOperationType == [
 ]
 
 \* Custom resource state machine states and events
-CustomResourceStateMachineStates == { "Inactive", "PrepareForCreation", "CreateResources", "WaitForResourceCreation", "PrepareForCreation", "Ready" }
+CustomResourceStateMachineStates == { "Inactive", "PrepareForCreation", "CreateResources", "WaitForResourceCreation", "Ready" }
 CustomResourceStateMachineEvents == { "Update", "Create"}
 CustomResourceStateMachineType == [
     State: CustomResourceStateMachineStates
@@ -151,14 +151,14 @@ Next ==
     \/ CustomResource_FSM_Actions
 
 UpdatesAreFinite == 
-    K8sParentCustomObjectGeneration < 2
+    K8sParentCustomObjectGeneration < 3
 
 Spec == 
     /\ Init
     /\ [][Next]_vars
-    /\ WF_vars(CustomResource_FSM_Actions)
-    /\ WF_vars(CustomResourceProvider_FSM_Actions)
-    /\ WF_vars(K8sChildCustomObject_Actions)
+    \* /\ WF_vars(CustomResource_FSM_Actions)
+    \* /\ WF_vars(CustomResourceProvider_FSM_Actions)
+    \* /\ WF_vars(K8sChildCustomObject_Actions)
     
 
 \** Invariants
@@ -171,7 +171,7 @@ Safe ==
     \* /\ [][CustomResourceFSM.State = "Ready" => CustomResourceproviderFSM.State = "Ready"]_vars
 
 Live ==
-    \* /\ <>(K8sChildCustomObject.Ready = TRUE) ~> (CustomResourceFSM.State = "Ready" /\ CustomResourceproviderFSM.State = "Ready")
+    /\ <>(K8sChildCustomObject.Ready = TRUE) ~> (CustomResourceFSM.State = "Ready" /\ CustomResourceproviderFSM.State = "Ready")
     /\ TRUE
 
 Correct ==
